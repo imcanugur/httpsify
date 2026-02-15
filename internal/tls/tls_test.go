@@ -43,7 +43,7 @@ func TestGenerateSelfSignedCert(t *testing.T) {
 		t.Errorf("CA certificate file not created: %s", caPath)
 	}
 
-	if tlsCfg.MinVersion < 0x0303 { 
+	if tlsCfg.MinVersion < 0x0303 {
 		t.Errorf("MinVersion = %x, want >= TLS 1.2 (0x0303)", tlsCfg.MinVersion)
 	}
 

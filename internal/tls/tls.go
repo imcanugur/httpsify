@@ -55,9 +55,32 @@ func generateSelfSignedCert(certPath, keyPath string) (*tls.Config, error) {
 		return nil, fmt.Errorf("failed to create cert directory: %w", err)
 	}
 
+	caKey, caCertDER, caCert, err := generateCA()
+	if err != nil {
+		return nil, err
+	}
+
+	leafKey, leafCertDER, err := generateLeafCert(caCert, caKey)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := writeCertFiles(certPath, keyPath, certDir, leafCertDER, caCertDER, leafKey); err != nil {
+		return nil, err
+	}
+
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load generated certificate: %w", err)
+	}
+
+	return createTLSConfig(cert), nil
+}
+
+func generateCA() (*ecdsa.PrivateKey, []byte, *x509.Certificate, error) {
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate CA key: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to generate CA key: %w", err)
 	}
 
 	caTemplate := &x509.Certificate{
@@ -76,22 +99,26 @@ func generateSelfSignedCert(certPath, keyPath string) (*tls.Config, error) {
 
 	caCertDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create CA certificate: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create CA certificate: %w", err)
 	}
 
 	caCert, err := x509.ParseCertificate(caCertDER)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to parse CA certificate: %w", err)
 	}
 
+	return caKey, caCertDER, caCert, nil
+}
+
+func generateLeafCert(caCert *x509.Certificate, caKey *ecdsa.PrivateKey) (*ecdsa.PrivateKey, []byte, error) {
 	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate leaf key: %w", err)
+		return nil, nil, fmt.Errorf("failed to generate leaf key: %w", err)
 	}
 
 	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate serial number: %w", err)
+		return nil, nil, fmt.Errorf("failed to generate serial number: %w", err)
 	}
 
 	leafTemplate := &x509.Certificate{
@@ -120,54 +147,53 @@ func generateSelfSignedCert(certPath, keyPath string) (*tls.Config, error) {
 
 	leafCertDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caCert, &leafKey.PublicKey, caKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create leaf certificate: %w", err)
+		return nil, nil, fmt.Errorf("failed to create leaf certificate: %w", err)
 	}
 
+	return leafKey, leafCertDER, nil
+}
+
+func writeCertFiles(certPath, keyPath, certDir string, leafCertDER, caCertDER []byte, leafKey *ecdsa.PrivateKey) error {
 	certFile, err := os.OpenFile(certPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open cert file: %w", err)
+		return fmt.Errorf("failed to open cert file: %w", err)
 	}
 	defer certFile.Close()
 
 	if err := pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: leafCertDER}); err != nil {
-		return nil, fmt.Errorf("failed to write leaf certificate: %w", err)
+		return fmt.Errorf("failed to write leaf certificate: %w", err)
 	}
 	if err := pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: caCertDER}); err != nil {
-		return nil, fmt.Errorf("failed to write CA certificate: %w", err)
+		return fmt.Errorf("failed to write CA certificate: %w", err)
 	}
 
 	keyFile, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open key file: %w", err)
+		return fmt.Errorf("failed to open key file: %w", err)
 	}
 	defer keyFile.Close()
 
 	leafKeyDER, err := x509.MarshalECPrivateKey(leafKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal leaf key: %w", err)
+		return fmt.Errorf("failed to marshal leaf key: %w", err)
 	}
 
 	if err := pem.Encode(keyFile, &pem.Block{Type: "EC PRIVATE KEY", Bytes: leafKeyDER}); err != nil {
-		return nil, fmt.Errorf("failed to write leaf key: %w", err)
+		return fmt.Errorf("failed to write leaf key: %w", err)
 	}
 
 	caCertPath := filepath.Join(certDir, "ca.pem")
 	caFile, err := os.OpenFile(caCertPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open CA cert file: %w", err)
+		return fmt.Errorf("failed to open CA cert file: %w", err)
 	}
 	defer caFile.Close()
 
 	if err := pem.Encode(caFile, &pem.Block{Type: "CERTIFICATE", Bytes: caCertDER}); err != nil {
-		return nil, fmt.Errorf("failed to write CA certificate: %w", err)
+		return fmt.Errorf("failed to write CA certificate: %w", err)
 	}
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load generated certificate: %w", err)
-	}
-
-	return createTLSConfig(cert), nil
+	return nil
 }
 
 func createTLSConfig(cert tls.Certificate) *tls.Config {

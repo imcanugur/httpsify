@@ -9,12 +9,12 @@ import (
 )
 
 var DefaultDenyPorts = []string{
-	"22",       // SSH
-	"25",       // SMTP
-	"135-139",  // NetBIOS/SMB
-	"445",      // SMB
-	"3389",     // RDP
-	"5900",     // VNC
+	"22",      // SSH
+	"25",      // SMTP
+	"135-139", // NetBIOS/SMB
+	"445",     // SMB
+	"3389",    // RDP
+	"5900",    // VNC
 }
 
 type Config struct {

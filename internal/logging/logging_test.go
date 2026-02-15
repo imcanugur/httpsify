@@ -87,7 +87,7 @@ func TestLogRequestDisabled(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	logger := NewLogger(false, false) 
+	logger := NewLogger(false, false)
 	ctx := context.Background()
 
 	logger.LogRequest(ctx, "GET", "8000.localhost", 8000, 200, 100*time.Millisecond, 1234, nil)
@@ -105,7 +105,7 @@ func TestLogRequestDisabled(t *testing.T) {
 
 func TestContextKey(t *testing.T) {
 	ctx := context.WithValue(context.Background(), RequestIDKey, "my-request-id")
-	
+
 	value := ctx.Value(RequestIDKey)
 	if value != "my-request-id" {
 		t.Errorf("Context value = %v, want my-request-id", value)
@@ -114,7 +114,7 @@ func TestContextKey(t *testing.T) {
 
 func TestLoggerMethods(t *testing.T) {
 	logger := NewLogger(true, true)
-	
+
 	logger.ServerStarting(":443", "cert.pem", "key.pem", false)
 	logger.ServerStarted(":443")
 	logger.CertGenerated("cert.pem", "key.pem")

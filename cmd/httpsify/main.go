@@ -142,7 +142,7 @@ Environment Variables:
 
 	go func() {
 		logger.ServerStarted(cfg.ListenAddr)
-		
+
 		fmt.Fprintf(os.Stderr, "\n")
 		fmt.Fprintf(os.Stderr, "╭─────────────────────────────────────────────────────────────╮\n")
 		fmt.Fprintf(os.Stderr, "│                                                             │\n")

@@ -54,7 +54,7 @@ func NewServer(cfg *config.Config, logger *logging.Logger) *Server {
 					IdleConnTimeout:       time.Duration(cfg.IdleTimeout) * time.Second,
 					TLSHandshakeTimeout:   10 * time.Second,
 					ExpectContinueTimeout: 1 * time.Second,
-					DisableCompression:    true, 
+					DisableCompression:    true,
 				}
 			},
 		},
@@ -71,7 +71,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	port, err := s.parseHost(r.Host)
 	if err != nil {
-		s.handleError(w, r, requestID, http.StatusBadRequest, err.Error(), 
+		s.handleError(w, r, requestID, http.StatusBadRequest, err.Error(),
 			"Use format: https://<port>.localhost",
 			"https://8000.localhost")
 		s.logger.InvalidHost(requestID, r.Host, err.Error())
@@ -79,7 +79,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.cfg.IsPortAllowed(port) {
-		s.handleError(w, r, requestID, http.StatusForbidden, 
+		s.handleError(w, r, requestID, http.StatusForbidden,
 			fmt.Sprintf("Port %d is not allowed", port),
 			"This port is either denied or outside the allowed range",
 			"https://8000.localhost")
@@ -154,7 +154,7 @@ func (s *Server) handleHTTP(w *responseWriter, r *http.Request, requestID string
 
 			errMsg := "Backend service unavailable"
 			hint := fmt.Sprintf("Make sure a service is running on port %d", port)
-			
+
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				errMsg = "Request timed out"
 				hint = "The backend service took too long to respond"

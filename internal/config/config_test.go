@@ -163,10 +163,10 @@ func TestParsePortRanges(t *testing.T) {
 
 func TestPortRangeContains(t *testing.T) {
 	tests := []struct {
-		name  string
-		pr    PortRange
-		port  int
-		want  bool
+		name string
+		pr   PortRange
+		port int
+		want bool
 	}{
 		{
 			name: "single port - match",
