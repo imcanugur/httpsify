@@ -58,7 +58,7 @@ func DefaultConfig() *Config {
 		ListenAddr:        ":443",
 		CertPath:          "./cert/localhost.pem",
 		KeyPath:           "./cert/localhost-key.pem",
-		SelfSigned:        false,
+		SelfSigned:        true,
 		AllowRange:        PortRange{Start: 1024, End: 65535},
 		Verbose:           false,
 		AccessLog:         true,

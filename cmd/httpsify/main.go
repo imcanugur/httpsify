@@ -37,7 +37,7 @@ func run() error {
 		listen     = flag.String("listen", cfg.ListenAddr, "Listen address (e.g., :443)")
 		certPath   = flag.String("cert", cfg.CertPath, "Path to TLS certificate (PEM)")
 		keyPath    = flag.String("key", cfg.KeyPath, "Path to TLS private key (PEM)")
-		selfSigned = flag.Bool("self-signed", cfg.SelfSigned, "Generate self-signed certificate if missing")
+		selfSigned = flag.Bool("self-signed", true, "Generate self-signed certificate if missing (enabled by default)")
 		denyPorts  = flag.String("deny-ports", strings.Join(config.DefaultDenyPorts, ","), "Comma-separated list of denied ports/ranges")
 		allowRange = flag.String("allow-range", fmt.Sprintf("%d-%d", cfg.AllowRange.Start, cfg.AllowRange.End), "Allowed port range")
 		verbose    = flag.Bool("verbose", cfg.Verbose, "Enable verbose/debug logging")

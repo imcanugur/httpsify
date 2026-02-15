@@ -1,0 +1,41 @@
+[Unit]
+Description=HTTPSify - Dynamic HTTPS Reverse Proxy
+Documentation=https://github.com/imcanugur/httpsify
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/bin/httpsify \
+    --cert /etc/httpsify/localhost.pem \
+    --key /etc/httpsify/localhost-key.pem \
+    --listen :443
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/
+ReadWritePaths=/etc/httpsify
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=httpsify
+
+# Environment (optional overrides)
+# Environment="HTTPSIFY_VERBOSE=true"
+# Environment="HTTPSIFY_ACCESS_LOG=true"
+
+[Install]
+WantedBy=multi-user.target

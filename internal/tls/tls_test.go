@@ -7,7 +7,7 @@ import (
 )
 
 func TestGenerateSelfSignedCert(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "localssl-test-*")
+	tmpDir, err := os.MkdirTemp("", "httpsify-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestGenerateSelfSignedCert(t *testing.T) {
 }
 
 func TestLoadExistingCert(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "localssl-test-*")
+	tmpDir, err := os.MkdirTemp("", "httpsify-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
