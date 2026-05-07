@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -37,7 +38,7 @@ type Server struct {
 	logger        *logging.Logger
 	requestIDGen  atomic.Uint64
 	transportPool sync.Pool
-	activePorts   sync.Map // map[int]time.Time
+	activePorts   sync.Map 
 }
 
 func NewServer(cfg *config.Config, logger *logging.Logger) *Server {
@@ -313,4 +314,147 @@ func (rw *responseWriter) Flush() {
 	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+func (s *Server) getListeningPorts() (httpPorts []int, otherPorts []int) {
+	rawPorts := make(map[int]bool)
+
+	files := []string{"/proc/net/tcp", "/proc/net/tcp6"}
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			if i == 0 || strings.TrimSpace(line) == "" {
+				continue
+			}
+
+			fields := strings.Fields(line)
+			if len(fields) < 4 {
+				continue
+			}
+
+			localAddr := fields[1]
+			state := fields[3]
+
+			if state != "0A" {
+				continue
+			}
+
+			parts := strings.Split(localAddr, ":")
+			if len(parts) != 2 {
+				continue
+			}
+
+			if parts[0] != "0100007F" && parts[0] != "00000000" && parts[0] != "00000000000000000000000000000000" && parts[0] != "00000000000000000000000001000000" {
+				continue
+			}
+
+			portHex := parts[1]
+			port, err := strconv.ParseInt(portHex, 16, 32)
+			if err != nil {
+				continue
+			}
+
+			proxyPort := 443
+			if strings.Contains(s.cfg.ListenAddr, ":") {
+				parts := strings.Split(s.cfg.ListenAddr, ":")
+				if p, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+					proxyPort = p
+				}
+			}
+
+			if int(port) == proxyPort {
+				continue
+			}
+
+			if int(port) >= 1024 && int(port) <= 65535 {
+				rawPorts[int(port)] = true
+			}
+		}
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for p := range rawPorts {
+		wg.Add(1)
+		go func(port int) {
+			defer wg.Done()
+			if s.isHTTPPort(port) {
+				mu.Lock()
+				httpPorts = append(httpPorts, port)
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				otherPorts = append(otherPorts, port)
+				mu.Unlock()
+			}
+		}(p)
+	}
+
+	wg.Wait()
+	return httpPorts, otherPorts
+}
+
+func (s *Server) isHTTPPort(port int) bool {
+	blocklist := map[int]bool{
+		3306:  true, // MySQL
+		5432:  true, // Postgres
+		27017: true, // MongoDB
+		6379:  true, // Redis
+		9000:  true, // PHP-FPM
+		11211: true, // Memcached
+		6010:  true, // X11
+		6011:  true, // X11
+	}
+
+	if blocklist[port] {
+		return false
+	}
+
+	isEphemeral := port >= 32768
+
+	client := &http.Client{
+		Timeout: 100 * time.Millisecond,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "httpsify-discovery/1.0")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	if !strings.HasPrefix(resp.Proto, "HTTP/") {
+		return false
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+
+	if isEphemeral && contentType == "" {
+		return false
+	}
+
+	hasStandardHeaders := contentType != "" ||
+		resp.Header.Get("Server") != "" ||
+		resp.Header.Get("Date") != "" ||
+		resp.Header.Get("Content-Length") != "" ||
+		resp.Header.Get("Connection") != ""
+
+	if !hasStandardHeaders {
+		return false
+	}
+
+	return resp.StatusCode >= 100 && resp.StatusCode < 600
 }

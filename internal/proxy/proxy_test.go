@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/imcanugur/httpsify/internal/config"
 )
 
 func TestParseHost(t *testing.T) {
@@ -218,7 +220,9 @@ func TestHostPatternRegex(t *testing.T) {
 }
 
 func TestServeLandingPage(t *testing.T) {
-	s := &Server{}
+	s := &Server{
+		cfg: config.DefaultConfig(),
+	}
 	req := httptest.NewRequest("GET", "https://localhost/", nil)
 	rr := httptest.NewRecorder()
 
