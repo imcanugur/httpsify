@@ -15,12 +15,7 @@ import (
 	"github.com/imcanugur/httpsify/internal/logging"
 	"github.com/imcanugur/httpsify/internal/proxy"
 	tlsutil "github.com/imcanugur/httpsify/internal/tls"
-)
-
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
+	"github.com/imcanugur/httpsify/internal/version"
 )
 
 const boxEmptyLine = "│                                                             │\n"
@@ -96,7 +91,7 @@ func parseFlags(cfg *config.Config) error {
 	flag.Parse()
 
 	if *showVer {
-		fmt.Printf("httpsify %s (commit: %s, built: %s)\n", version, commit, date)
+		fmt.Println(version.FullVersion())
 		os.Exit(0)
 	}
 

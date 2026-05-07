@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/imcanugur/httpsify/internal/version"
 )
 
 //go:embed landing.html
@@ -16,8 +18,6 @@ func (s *Server) serveLandingPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.WriteHeader(http.StatusOK)
-
-	version := "1.0.0"
 
 	httpPorts, otherPorts := s.getListeningPorts()
 	sort.Ints(httpPorts)
@@ -51,12 +51,12 @@ func (s *Server) serveLandingPage(w http.ResponseWriter, r *http.Request) {
 		otherSectionClass = "hidden"
 	}
 
-	// Use Replacer to avoid % conflicts in CSS
+	ver := version.Get()
 	output := strings.NewReplacer(
 		"{{.HTTP_LIST}}", httpHTML.String(),
 		"{{.OTHER_SECTION_CLASS}}", otherSectionClass,
 		"{{.OTHER_LIST}}", otherHTML.String(),
-		"{{.VERSION}}", version,
+		"{{.VERSION}}", ver.Version,
 	).Replace(landingPageHTML)
 
 	w.Write([]byte(output))
