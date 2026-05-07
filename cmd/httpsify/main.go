@@ -23,6 +23,8 @@ var (
 	date    = "unknown"
 )
 
+const boxEmptyLine = "│                                                             │\n"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -32,7 +34,52 @@ func main() {
 
 func run() error {
 	cfg := config.DefaultConfig()
+	if err := parseFlags(cfg); err != nil {
+		return err
+	}
 
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("configuration error: %w", err)
+	}
+
+	logger := logging.NewLogger(cfg.Verbose, cfg.AccessLog)
+	logger.ServerStarting(cfg.ListenAddr, cfg.CertPath, cfg.KeyPath, cfg.SelfSigned)
+
+	tlsCfg, err := tlsutil.LoadOrGenerateCert(tlsutil.Config{
+		CertPath:   cfg.CertPath,
+		KeyPath:    cfg.KeyPath,
+		SelfSigned: cfg.SelfSigned,
+	})
+	if err != nil {
+		return fmt.Errorf("TLS configuration error: %w", err)
+	}
+
+	if cfg.SelfSigned {
+		logger.CertGenerated(cfg.CertPath, cfg.KeyPath)
+	}
+
+	server := &http.Server{
+		Addr:              cfg.ListenAddr,
+		Handler:           proxy.NewServer(cfg, logger),
+		TLSConfig:         tlsCfg,
+		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeout) * time.Second,
+		IdleTimeout:       time.Duration(cfg.IdleTimeout) * time.Second,
+		WriteTimeout:      time.Duration(cfg.WriteTimeout) * time.Second,
+	}
+
+	errChan := make(chan error, 1)
+	go func() {
+		logger.ServerStarted(cfg.ListenAddr)
+		printStartupBox(cfg.ListenAddr)
+		if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			errChan <- err
+		}
+	}()
+
+	return waitForShutdown(server, logger, errChan)
+}
+
+func parseFlags(cfg *config.Config) error {
 	var (
 		listen     = flag.String("listen", cfg.ListenAddr, "Listen address (e.g., :443)")
 		certPath   = flag.String("cert", cfg.CertPath, "Path to TLS certificate (PEM)")
@@ -45,6 +92,38 @@ func run() error {
 		showVer    = flag.Bool("version", false, "Show version information")
 	)
 
+	setupFlagUsage()
+	flag.Parse()
+
+	if *showVer {
+		fmt.Printf("httpsify %s (commit: %s, built: %s)\n", version, commit, date)
+		os.Exit(0)
+	}
+
+	cfg.LoadFromEnv()
+	cfg.ListenAddr, cfg.CertPath, cfg.KeyPath = *listen, *certPath, *keyPath
+	cfg.SelfSigned, cfg.Verbose, cfg.AccessLog = *selfSigned, *verbose, *accessLog
+
+	if *denyPorts != "" {
+		ranges, err := config.ParsePortRanges(*denyPorts)
+		if err != nil {
+			return fmt.Errorf("invalid deny-ports: %w", err)
+		}
+		cfg.DenyPorts = ranges
+	}
+
+	if *allowRange != "" {
+		pr, err := config.ParsePortRange(*allowRange)
+		if err != nil {
+			return fmt.Errorf("invalid allow-range: %w", err)
+		}
+		cfg.AllowRange = pr
+	}
+
+	return nil
+}
+
+func setupFlagUsage() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `httpsify - Dynamic HTTPS reverse proxy for local development
 
@@ -73,98 +152,28 @@ Environment Variables:
 
 `)
 	}
+}
 
-	flag.Parse()
+func printStartupBox(listenAddr string) {
+	fmt.Fprintf(os.Stderr, "\n")
+	fmt.Fprintf(os.Stderr, "╭─────────────────────────────────────────────────────────────╮\n")
+	fmt.Fprintf(os.Stderr, boxEmptyLine)
+	fmt.Fprintf(os.Stderr, "│   🔒 httpsify is running                                    │\n")
+	fmt.Fprintf(os.Stderr, boxEmptyLine)
+	fmt.Fprintf(os.Stderr, "│   Listening on: %-42s│\n", "https://localhost"+listenAddr)
+	fmt.Fprintf(os.Stderr, boxEmptyLine)
+	fmt.Fprintf(os.Stderr, "│   Usage examples:                                           │\n")
+	fmt.Fprintf(os.Stderr, "│     https://8000.localhost  →  http://127.0.0.1:8000        │\n")
+	fmt.Fprintf(os.Stderr, "│     https://3000.localhost  →  http://127.0.0.1:3000        │\n")
+	fmt.Fprintf(os.Stderr, "│     https://5173.localhost  →  http://127.0.0.1:5173        │\n")
+	fmt.Fprintf(os.Stderr, boxEmptyLine)
+	fmt.Fprintf(os.Stderr, "│   Press Ctrl+C to stop                                      │\n")
+	fmt.Fprintf(os.Stderr, boxEmptyLine)
+	fmt.Fprintf(os.Stderr, "╰─────────────────────────────────────────────────────────────╯\n")
+	fmt.Fprintf(os.Stderr, "\n")
+}
 
-	if *showVer {
-		fmt.Printf("httpsify %s (commit: %s, built: %s)\n", version, commit, date)
-		return nil
-	}
-
-	cfg.LoadFromEnv()
-
-	cfg.ListenAddr = *listen
-	cfg.CertPath = *certPath
-	cfg.KeyPath = *keyPath
-	cfg.SelfSigned = *selfSigned
-	cfg.Verbose = *verbose
-	cfg.AccessLog = *accessLog
-
-	if *denyPorts != "" {
-		ranges, err := config.ParsePortRanges(*denyPorts)
-		if err != nil {
-			return fmt.Errorf("invalid deny-ports: %w", err)
-		}
-		cfg.DenyPorts = ranges
-	}
-
-	if *allowRange != "" {
-		pr, err := config.ParsePortRange(*allowRange)
-		if err != nil {
-			return fmt.Errorf("invalid allow-range: %w", err)
-		}
-		cfg.AllowRange = pr
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("configuration error: %w", err)
-	}
-
-	logger := logging.NewLogger(cfg.Verbose, cfg.AccessLog)
-
-	logger.ServerStarting(cfg.ListenAddr, cfg.CertPath, cfg.KeyPath, cfg.SelfSigned)
-
-	tlsCfg, err := tlsutil.LoadOrGenerateCert(tlsutil.Config{
-		CertPath:   cfg.CertPath,
-		KeyPath:    cfg.KeyPath,
-		SelfSigned: cfg.SelfSigned,
-	})
-	if err != nil {
-		return fmt.Errorf("TLS configuration error: %w", err)
-	}
-
-	if cfg.SelfSigned {
-		logger.CertGenerated(cfg.CertPath, cfg.KeyPath)
-	}
-
-	proxyHandler := proxy.NewServer(cfg, logger)
-
-	server := &http.Server{
-		Addr:              cfg.ListenAddr,
-		Handler:           proxyHandler,
-		TLSConfig:         tlsCfg,
-		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeout) * time.Second,
-		IdleTimeout:       time.Duration(cfg.IdleTimeout) * time.Second,
-		WriteTimeout:      time.Duration(cfg.WriteTimeout) * time.Second,
-	}
-
-	errChan := make(chan error, 1)
-
-	go func() {
-		logger.ServerStarted(cfg.ListenAddr)
-
-		fmt.Fprintf(os.Stderr, "\n")
-		fmt.Fprintf(os.Stderr, "╭─────────────────────────────────────────────────────────────╮\n")
-		fmt.Fprintf(os.Stderr, "│                                                             │\n")
-		fmt.Fprintf(os.Stderr, "│   🔒 httpsify is running                                    │\n")
-		fmt.Fprintf(os.Stderr, "│                                                             │\n")
-		fmt.Fprintf(os.Stderr, "│   Listening on: %-42s│\n", "https://localhost"+cfg.ListenAddr)
-		fmt.Fprintf(os.Stderr, "│                                                             │\n")
-		fmt.Fprintf(os.Stderr, "│   Usage examples:                                           │\n")
-		fmt.Fprintf(os.Stderr, "│     https://8000.localhost  →  http://127.0.0.1:8000        │\n")
-		fmt.Fprintf(os.Stderr, "│     https://3000.localhost  →  http://127.0.0.1:3000        │\n")
-		fmt.Fprintf(os.Stderr, "│     https://5173.localhost  →  http://127.0.0.1:5173        │\n")
-		fmt.Fprintf(os.Stderr, "│                                                             │\n")
-		fmt.Fprintf(os.Stderr, "│   Press Ctrl+C to stop                                      │\n")
-		fmt.Fprintf(os.Stderr, "│                                                             │\n")
-		fmt.Fprintf(os.Stderr, "╰─────────────────────────────────────────────────────────────╯\n")
-		fmt.Fprintf(os.Stderr, "\n")
-
-		if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
-			errChan <- err
-		}
-	}()
-
+func waitForShutdown(server *http.Server, logger *logging.Logger, errChan <-chan error) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 

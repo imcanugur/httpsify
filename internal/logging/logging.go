@@ -59,26 +59,36 @@ func (l *Logger) AccessLog() bool {
 	return l.accessLog
 }
 
-func (l *Logger) LogRequest(ctx context.Context, method, host string, targetPort int, statusCode int, latency time.Duration, bytesWritten int64, err error) {
+type LogRequestParams struct {
+	Method       string
+	Host         string
+	TargetPort   int
+	StatusCode   int
+	Latency      time.Duration
+	BytesWritten int64
+	Error        error
+}
+
+func (l *Logger) LogRequest(ctx context.Context, p LogRequestParams) {
 	if !l.accessLog {
 		return
 	}
 
 	attrs := []slog.Attr{
-		slog.String("method", method),
-		slog.String("host", host),
-		slog.Int("target_port", targetPort),
-		slog.Int("status", statusCode),
-		slog.Duration("latency", latency),
-		slog.Int64("bytes", bytesWritten),
+		slog.String("method", p.Method),
+		slog.String("host", p.Host),
+		slog.Int("target_port", p.TargetPort),
+		slog.Int("status", p.StatusCode),
+		slog.Duration("latency", p.Latency),
+		slog.Int64("bytes", p.BytesWritten),
 	}
 
 	if requestID, ok := ctx.Value(RequestIDKey).(string); ok {
 		attrs = append([]slog.Attr{slog.String("request_id", requestID)}, attrs...)
 	}
 
-	if err != nil {
-		attrs = append(attrs, slog.String("error", err.Error()))
+	if p.Error != nil {
+		attrs = append(attrs, slog.String("error", p.Error.Error()))
 		l.LogAttrs(ctx, slog.LevelError, "request failed", attrs...)
 	} else {
 		l.LogAttrs(ctx, slog.LevelInfo, "request completed", attrs...)

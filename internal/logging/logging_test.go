@@ -55,7 +55,15 @@ func TestLogRequest(t *testing.T) {
 	logger := NewLogger(false, true)
 	ctx := context.WithValue(context.Background(), RequestIDKey, "test-request-123")
 
-	logger.LogRequest(ctx, "GET", "8000.localhost", 8000, 200, 100*time.Millisecond, 1234, nil)
+	logger.LogRequest(ctx, LogRequestParams{
+		Method:       "GET",
+		Host:         "8000.localhost",
+		TargetPort:   8000,
+		StatusCode:   200,
+		Latency:      100 * time.Millisecond,
+		BytesWritten: 1234,
+		Error:        nil,
+	})
 
 	w.Close()
 	os.Stdout = old
@@ -90,7 +98,15 @@ func TestLogRequestDisabled(t *testing.T) {
 	logger := NewLogger(false, false)
 	ctx := context.Background()
 
-	logger.LogRequest(ctx, "GET", "8000.localhost", 8000, 200, 100*time.Millisecond, 1234, nil)
+	logger.LogRequest(ctx, LogRequestParams{
+		Method:       "GET",
+		Host:         "8000.localhost",
+		TargetPort:   8000,
+		StatusCode:   200,
+		Latency:      100 * time.Millisecond,
+		BytesWritten: 1234,
+		Error:        nil,
+	})
 
 	w.Close()
 	os.Stdout = old

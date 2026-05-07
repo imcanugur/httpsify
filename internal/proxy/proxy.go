@@ -96,7 +96,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	latency := time.Since(start)
-	s.logger.LogRequest(ctx, r.Method, r.Host, port, rw.statusCode, latency, rw.bytesWritten, rw.err)
+	s.logger.LogRequest(ctx, logging.LogRequestParams{
+		Method:       r.Method,
+		Host:         r.Host,
+		TargetPort:   port,
+		StatusCode:   rw.statusCode,
+		Latency:      latency,
+		BytesWritten: rw.bytesWritten,
+		Error:        rw.err,
+	})
 }
 
 func (s *Server) parseHost(host string) (int, error) {
@@ -166,8 +174,6 @@ func (s *Server) handleHTTP(w *responseWriter, r *http.Request, requestID string
 			s.writeJSONError(rw, http.StatusBadGateway, errMsg, hint, "")
 		},
 		ModifyResponse: func(resp *http.Response) error {
-			if resp.Header.Get("Access-Control-Allow-Origin") == "" {
-			}
 			return nil
 		},
 	}
