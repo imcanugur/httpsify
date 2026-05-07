@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -212,5 +214,26 @@ func TestHostPatternRegex(t *testing.T) {
 				t.Errorf("hostPattern.FindStringSubmatch(%q) port = %q, want %q", tt.host, matches[1], tt.port)
 			}
 		})
+	}
+}
+
+func TestServeLandingPage(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest("GET", "https://localhost/", nil)
+	rr := httptest.NewRecorder()
+
+	s.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	}
+
+	contentType := rr.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("handler returned wrong content type: got %v want text/html", contentType)
+	}
+
+	if !strings.Contains(rr.Body.String(), "httpsify") {
+		t.Errorf("handler returned body without 'httpsify' title")
 	}
 }

@@ -23,6 +23,7 @@ import (
 
 var (
 	hostPattern = regexp.MustCompile(`^(\d+)\.(localhost|localtest\.me)(?::\d+)?$`)
+	rootPattern = regexp.MustCompile(`^(localhost|localtest\.me)(?::\d+)?$`)
 )
 
 type ErrorResponse struct {
@@ -36,6 +37,7 @@ type Server struct {
 	logger        *logging.Logger
 	requestIDGen  atomic.Uint64
 	transportPool sync.Pool
+	activePorts   sync.Map // map[int]time.Time
 }
 
 func NewServer(cfg *config.Config, logger *logging.Logger) *Server {
@@ -68,6 +70,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 
 	w.Header().Set("X-Request-ID", requestID)
+
+	if rootPattern.MatchString(r.Host) {
+		s.serveLandingPage(w, r)
+		return
+	}
 
 	port, err := s.parseHost(r.Host)
 	if err != nil {
