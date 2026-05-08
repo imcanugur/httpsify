@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>httpsify &bull; Ready</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <style>
         :root {
             --bg: #ffffff;
@@ -60,8 +63,15 @@
         }
 
         @keyframes reveal {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .status-badge {
@@ -88,9 +98,20 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(0.9); opacity: 0.5; }
-            50% { transform: scale(1.1); opacity: 1; }
-            100% { transform: scale(0.9); opacity: 0.5; }
+            0% {
+                transform: scale(0.9);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: scale(1.1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(0.9);
+                opacity: 0.5;
+            }
         }
 
         h1 {
@@ -145,7 +166,7 @@
             background: #ffffff;
             border-color: #ccc;
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
         }
 
         .port-name {
@@ -226,19 +247,313 @@
             z-index: -1;
             pointer-events: none;
         }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: #fcfcfc;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--fg);
+            font-family: var(--font-mono);
+        }
+
+        .ip-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        /* Premium Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            transition: background 0.2s ease;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            /* Start from top for long modals */
+            padding: 40px 20px;
+            overflow-y: auto;
+            /* Modal itself is scrollable */
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-container {
+            background: #ffffff;
+            width: 100%;
+            max-width: 720px;
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.12);
+            padding: 40px;
+            margin-bottom: 40px;
+            transform: scale(0.96) translateY(20px);
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .modal-overlay.active .modal-container {
+            transform: scale(1) translateY(0);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 32px;
+        }
+
+        .modal-close {
+            background: #f5f5f5;
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 20px;
+            color: var(--muted);
+            transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+            background: #eee;
+            color: var(--fg);
+            transform: rotate(90deg);
+        }
+
+        .detail-row {
+            margin-bottom: 24px;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .detail-value {
+            font-size: 13px;
+            font-family: var(--font-mono);
+            color: var(--fg);
+            word-break: break-all;
+            background: #f8f8f8;
+            border: 1px solid #eee;
+            padding: 10px 14px;
+            border-radius: 12px;
+            line-height: 1.5;
+        }
+
+        .header-list {
+            max-height: 250px;
+            overflow-y: auto;
+            overflow-x: hidden; /* No horizontal scroll */
+            background: #f8f8f8;
+            border: 1px solid #eee;
+            border-radius: 12px;
+            padding: 12px;
+            font-size: 11px;
+            font-family: var(--font-mono);
+        }
+
+        .header-item {
+            display: flex;
+            flex-wrap: wrap; /* Wrap if too long */
+            margin-bottom: 8px;
+            border-bottom: 1px solid #edf2f7;
+            padding-bottom: 8px;
+        }
+
+        .header-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        .header-key {
+            color: var(--muted);
+            font-weight: 600;
+            margin-right: 12px;
+            min-width: 140px;
+        }
+
+        .header-val {
+            color: var(--fg);
+            word-break: break-all; /* Prevent horizontal scroll */
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .body-snippet {
+            background: #0f1117;
+            color: #e3e6ed;
+            padding: 16px;
+            border-radius: 14px;
+            font-size: 12px;
+            font-family: var(--font-mono);
+            white-space: pre-wrap; /* Wrap lines */
+            word-break: break-all; /* Force break long lines */
+            max-height: 350px;
+            overflow-y: auto;
+            overflow-x: hidden; /* No horizontal scroll */
+            line-height: 1.6;
+            border: 1px solid #2d3139;
+        }
+
+        .grid-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
     </style>
 </head>
+
 <body>
     <div class="bg-gradient"></div>
-    
+
+    <div id="service-modal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div>
+                    <div class="section-title">Service Discovery</div>
+                    <h2 id="modal-title" style="font-size: 20px; margin-top: 4px;">Port 8000</h2>
+                </div>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+
+            <div id="modal-content">
+                <div class="grid-details">
+                    <div class="detail-row">
+                        <div class="detail-label">Owning Process</div>
+                        <div id="detail-process" class="detail-value" style="color: var(--accent); font-weight: 700;">-
+                        </div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Latency</div>
+                        <div id="detail-latency" class="detail-value">-</div>
+                    </div>
+                </div>
+
+                <div class="grid-details">
+                    <div class="detail-row">
+                        <div class="detail-label">Protocol</div>
+                        <div id="detail-proto" class="detail-value">HTTP/1.1</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Content-Type</div>
+                        <div id="detail-type" class="detail-value">text/html</div>
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">HTTP Headers</div>
+                    <div id="detail-headers" class="header-list">
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Response Snippet</div>
+                    <div id="detail-body" class="body-snippet">
+                    </div>
+                </div>
+
+                <div class="detail-row" style="margin-top: 24px;">
+                    <a id="modal-link" href="#" class="port-item"
+                        style="background: var(--accent); color: white; border: none; justify-content: center;">
+                        Access via HTTPS
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="content">
         <div class="status-badge">
             <div class="dot"></div>
             System Operational
         </div>
-        
+
         <h1>httpsify</h1>
         <p class="description">Stop configuring. Start building.</p>
+
+        <div class="section-header">
+            <span class="section-title">Dashboard</span>
+        </div>
+        <div class="dashboard-grid">
+            <div class="stat-card">
+                <div class="stat-label">Server Uptime</div>
+                <div class="stat-value">{{.UPTIME}}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Requests</div>
+                <div class="stat-value">{{.REQUEST_COUNT}}</div>
+            </div>
+            <div class="stat-card" style="grid-column: span 2;">
+                <div class="stat-label">Network Accessibility</div>
+                <div class="ip-list">
+                    {{.LOCAL_IPS}}
+                </div>
+            </div>
+        </div>
 
         <div class="section-header">
             <span class="section-title">Proxy Ready Services</span>
@@ -266,6 +581,7 @@
     <script>
         const toggleBtn = document.getElementById('toggle-other');
         const otherList = document.getElementById('other-list');
+        const modal = document.getElementById('service-modal');
 
         if (toggleBtn && otherList) {
             toggleBtn.addEventListener('click', () => {
@@ -279,6 +595,62 @@
                 }
             });
         }
+
+        // Modal Logic
+        document.querySelectorAll('.port-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const svcData = item.getAttribute('data-service');
+                if (!svcData) return;
+
+                e.preventDefault();
+                const svc = JSON.parse(svcData);
+
+                document.getElementById('modal-title').textContent = svc.is_web ? `${svc.port}.localhost` : `Port ${svc.port}`;
+                document.getElementById('detail-proto').textContent = svc.protocol || 'Unknown';
+                document.getElementById('detail-process').textContent = svc.process_name || 'System/Kernel';
+                document.getElementById('detail-type').textContent = svc.content_type || 'None';
+                document.getElementById('detail-latency').textContent = svc.latency || 'N/A';
+                document.getElementById('detail-body').textContent = svc.body_snippet || '(Empty Body)';
+
+                const headerContainer = document.getElementById('detail-headers');
+                headerContainer.innerHTML = '';
+                if (svc.headers) {
+                    Object.entries(svc.headers).forEach(([k, v]) => {
+                        const item = document.createElement('div');
+                        item.className = 'header-item';
+                        item.innerHTML = `<span class="header-key">${k}</span><span class="header-val">${v}</span>`;
+                        headerContainer.appendChild(item);
+                    });
+                } else {
+                    headerContainer.innerHTML = '<div style="color: var(--muted)">No headers available</div>';
+                }
+
+                const link = document.getElementById('modal-link');
+                if (svc.is_web) {
+                    link.style.display = 'flex';
+                    link.href = `https://${svc.port}.localhost`;
+                } else {
+                    link.style.display = 'none';
+                }
+
+                modal.classList.add('active');
+            });
+        });
+
+        function closeModal() {
+            modal.classList.remove('active');
+        }
+
+        window.onclick = (event) => {
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
     </script>
 </body>
+
 </html>

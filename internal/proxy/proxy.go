@@ -11,6 +11,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -38,13 +39,16 @@ type Server struct {
 	logger        *logging.Logger
 	requestIDGen  atomic.Uint64
 	transportPool sync.Pool
-	activePorts   sync.Map 
+	activePorts   sync.Map
+	startTime     time.Time
+	requestCount  atomic.Uint64
 }
 
 func NewServer(cfg *config.Config, logger *logging.Logger) *Server {
 	return &Server{
-		cfg:    cfg,
-		logger: logger,
+		cfg:       cfg,
+		logger:    logger,
+		startTime: time.Now(),
 		transportPool: sync.Pool{
 			New: func() interface{} {
 				return &http.Transport{
@@ -65,6 +69,7 @@ func NewServer(cfg *config.Config, logger *logging.Logger) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.requestCount.Add(1)
 	start := time.Now()
 	requestID := s.generateRequestID()
 	ctx := context.WithValue(r.Context(), logging.RequestIDKey, requestID)
@@ -316,8 +321,58 @@ func (rw *responseWriter) Flush() {
 	}
 }
 
-func (s *Server) getListeningPorts() (httpPorts []int, otherPorts []int) {
-	rawPorts := make(map[int]bool)
+type ServiceInfo struct {
+	Port        int               `json:"port"`
+	IsWeb       bool              `json:"is_web"`
+	Server      string            `json:"server,omitempty"`
+	ContentType string            `json:"content_type,omitempty"`
+	Protocol    string            `json:"protocol,omitempty"`
+	ProcessName string            `json:"process_name,omitempty"`
+	Latency     string            `json:"latency,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	BodySnippet string            `json:"body_snippet,omitempty"`
+}
+
+func (s *Server) getInodeProcessMap() map[uint64]string {
+	m := make(map[uint64]string)
+	pids, err := filepath.Glob("/proc/[0-9]*")
+	if err != nil {
+		return m
+	}
+
+	for _, pidDir := range pids {
+		fdDir := filepath.Join(pidDir, "fd")
+		fds, err := os.ReadDir(fdDir)
+		if err != nil {
+			continue
+		}
+
+		var comm string
+		for _, fd := range fds {
+			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
+			if err != nil {
+				continue
+			}
+
+			if strings.HasPrefix(link, "socket:[") {
+				var inode uint64
+				fmt.Sscanf(link, "socket:[%d]", &inode)
+				if inode > 0 {
+					if comm == "" {
+						data, _ := os.ReadFile(filepath.Join(pidDir, "comm"))
+						comm = strings.TrimSpace(string(data))
+					}
+					m[inode] = comm
+				}
+			}
+		}
+	}
+	return m
+}
+
+func (s *Server) getListeningPorts() []ServiceInfo {
+	rawPorts := make(map[int]uint64)
+	procMap := s.getInodeProcessMap()
 
 	files := []string{"/proc/net/tcp", "/proc/net/tcp6"}
 	for _, file := range files {
@@ -333,12 +388,13 @@ func (s *Server) getListeningPorts() (httpPorts []int, otherPorts []int) {
 			}
 
 			fields := strings.Fields(line)
-			if len(fields) < 4 {
+			if len(fields) < 10 {
 				continue
 			}
 
 			localAddr := fields[1]
 			state := fields[3]
+			inodeStr := fields[9]
 
 			if state != "0A" {
 				continue
@@ -359,6 +415,8 @@ func (s *Server) getListeningPorts() (httpPorts []int, otherPorts []int) {
 				continue
 			}
 
+			inode, _ := strconv.ParseUint(inodeStr, 10, 64)
+
 			proxyPort := 443
 			if strings.Contains(s.cfg.ListenAddr, ":") {
 				parts := strings.Split(s.cfg.ListenAddr, ":")
@@ -372,89 +430,172 @@ func (s *Server) getListeningPorts() (httpPorts []int, otherPorts []int) {
 			}
 
 			if int(port) >= 1024 && int(port) <= 65535 {
-				rawPorts[int(port)] = true
+				rawPorts[int(port)] = inode
 			}
 		}
 	}
 
+	var services []ServiceInfo
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	for p := range rawPorts {
+	for p, inode := range rawPorts {
 		wg.Add(1)
-		go func(port int) {
+		go func(port int, in uint64) {
 			defer wg.Done()
-			if s.isHTTPPort(port) {
-				mu.Lock()
-				httpPorts = append(httpPorts, port)
-				mu.Unlock()
-			} else {
-				mu.Lock()
-				otherPorts = append(otherPorts, port)
-				mu.Unlock()
-			}
-		}(p)
+			info := s.probeService(port)
+			info.ProcessName = procMap[in]
+			mu.Lock()
+			services = append(services, info)
+			mu.Unlock()
+		}(p, inode)
 	}
 
 	wg.Wait()
-	return httpPorts, otherPorts
+	return services
 }
 
-func (s *Server) isHTTPPort(port int) bool {
+func (s *Server) probeService(port int) ServiceInfo {
+	info := ServiceInfo{
+		Port:    port,
+		Headers: make(map[string]string),
+	}
 	blocklist := map[int]bool{
+		// Database Ports
 		3306:  true, // MySQL
-		5432:  true, // Postgres
+		5432:  true, // PostgreSQL
 		27017: true, // MongoDB
+		28017: true, // MongoDB Web Interface
 		6379:  true, // Redis
-		9000:  true, // PHP-FPM
+		6380:  true, // Redis Alternate
+		7000:  true, // Cassandra
+		7001:  true, // Cassandra
+		9042:  true, // Cassandra CQL
+		5984:  true, // CouchDB
+		8086:  true, // InfluxDB
+		27018: true, // MongoDB Shard
+		27019: true, // MongoDB Config Server
+		9200:  true, // Elasticsearch
+		9300:  true, // Elasticsearch Node
+		5000:  true, // PostgreSQL Alt
+
+		// Cache & Session Stores
 		11211: true, // Memcached
+		6389:  true, // Redis Cluster
+		6381:  true, // Redis Sentinel
+
+		// Message Queues
+		5672:  true, // RabbitMQ
+		15672: true, // RabbitMQ Web
+		61613: true, // ActiveMQ
+		9092:  true, // Kafka
+		2181:  true, // Zookeeper
+
+		// Application Servers
+		8080:  true, // Java/Tomcat
+		8443:  true, // Java/Tomcat SSL
+		9000:  true, // PHP-FPM
+		9001:  true, // PHP-FPM Alt
+		4369:  true, // Erlang Port Mapper
+		25672: true, // RabbitMQ Clustering
+
+		// Remote Access & Management
+		22:    true, // SSH
+		3389:  true, // RDP
+		5900:  true, // VNC
+		5901:  true, // VNC Alt
+		6000:  true, // X11
+		6001:  true, // X11
 		6010:  true, // X11
 		6011:  true, // X11
+
+		// Mail Services
+		25:   true, // SMTP
+		110:  true, // POP3
+		143:  true, // IMAP
+		465:  true, // SMTPS
+		587:  true, // SMTP TLS
+		993:  true, // IMAPS
+		995:  true, // POP3S
+		5060: true, // SIP
+		5061: true, // SIP TLS
+
+		// Other Services
+		139:   true, // NetBIOS
+		445:   true, // SMB/CIFS
+		1433:  true, // MSSQL
+		1521:  true, // Oracle
+		2049:  true, // NFS
+		3260:  true, // iSCSI
+		5353:  true, // mDNS
+		8009:  true, // AJP (Tomcat)
+		9999:  true, // Alt Admin
+		10000: true, // Webmin
+		50070: true, // Hadoop NameNode
 	}
 
 	if blocklist[port] {
-		return false
+		return info
 	}
 
-	isEphemeral := port >= 32768
-
 	client := &http.Client{
-		Timeout: 100 * time.Millisecond,
+		Timeout: 200 * time.Millisecond,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
 
+	start := time.Now()
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "httpsify-discovery/1.0")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept", "text/html,application/json,text/plain")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return false
+		return info
 	}
 	defer resp.Body.Close()
+	info.Latency = time.Since(start).Round(time.Millisecond).String()
 
 	if !strings.HasPrefix(resp.Proto, "HTTP/") {
-		return false
+		return info
 	}
 
-	contentType := resp.Header.Get("Content-Type")
+	info.Protocol = resp.Proto
+	info.Server = resp.Header.Get("Server")
+	info.ContentType = resp.Header.Get("Content-Type")
 
-	if isEphemeral && contentType == "" {
-		return false
+	for k, v := range resp.Header {
+		if len(v) > 0 {
+			info.Headers[k] = v[0]
+		}
 	}
 
-	hasStandardHeaders := contentType != "" ||
-		resp.Header.Get("Server") != "" ||
-		resp.Header.Get("Date") != "" ||
-		resp.Header.Get("Content-Length") != "" ||
-		resp.Header.Get("Connection") != ""
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	info.BodySnippet = string(bodyBytes)
 
-	if !hasStandardHeaders {
-		return false
+	contentTypeLower := strings.ToLower(info.ContentType)
+	isWebType := strings.Contains(contentTypeLower, "text/html") ||
+		strings.Contains(contentTypeLower, "application/json") ||
+		strings.Contains(contentTypeLower, "text/javascript") ||
+		strings.Contains(contentTypeLower, "application/javascript") ||
+		strings.Contains(contentTypeLower, "text/plain") ||
+		strings.Contains(contentTypeLower, "text/xml") ||
+		strings.Contains(contentTypeLower, "application/xml") ||
+		strings.Contains(contentTypeLower, "application/xhtml+xml") ||
+		strings.Contains(contentTypeLower, "application/graphql+json")
+
+	hasWebHeaders := info.Server != "" ||
+		resp.Header.Get("X-Powered-By") != "" ||
+		resp.Header.Get("Access-Control-Allow-Origin") != "" ||
+		resp.Header.Get("Cache-Control") != "" ||
+		resp.Header.Get("Etag") != "" ||
+		resp.Header.Get("Set-Cookie") != ""
+
+	if isWebType || hasWebHeaders || (resp.StatusCode >= 200 && resp.StatusCode < 500) {
+		info.IsWeb = true
 	}
 
-	return resp.StatusCode >= 100 && resp.StatusCode < 600
+	return info
 }
