@@ -3,9 +3,9 @@ package logging
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -71,22 +71,20 @@ func TestLogRequest(t *testing.T) {
 	var buf bytes.Buffer
 	buf.ReadFrom(r)
 
-	var logEntry map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-		t.Fatalf("Failed to parse log output: %v", err)
+	output := buf.String()
+	
+	expectedParts := []string{
+		"method=GET",
+		"host=8000.localhost",
+		"status=200",
+		"request_id=test-request-123",
+		"msg=\"request completed\"",
 	}
 
-	if logEntry["method"] != "GET" {
-		t.Errorf("method = %v, want GET", logEntry["method"])
-	}
-	if logEntry["host"] != "8000.localhost" {
-		t.Errorf("host = %v, want 8000.localhost", logEntry["host"])
-	}
-	if logEntry["status"].(float64) != 200 {
-		t.Errorf("status = %v, want 200", logEntry["status"])
-	}
-	if logEntry["request_id"] != "test-request-123" {
-		t.Errorf("request_id = %v, want test-request-123", logEntry["request_id"])
+	for _, part := range expectedParts {
+		if !strings.Contains(output, part) {
+			t.Errorf("log output missing expected part: %s, output: %s", part, output)
+		}
 	}
 }
 

@@ -39,33 +39,48 @@ type Server struct {
 	cfg           *config.Config
 	logger        *logging.Logger
 	requestIDGen  atomic.Uint64
-	transportPool sync.Pool
+	transport     *http.Transport
 	activePorts   sync.Map
 	startTime     time.Time
 	requestCount  atomic.Uint64
+	localIPs      []string
+	ipsMutex      sync.RWMutex
 }
 
 func NewServer(cfg *config.Config, logger *logging.Logger) *Server {
-	return &Server{
+	tr := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   time.Duration(cfg.DialTimeout) * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		IdleConnTimeout:       time.Duration(cfg.IdleTimeout) * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		DisableCompression:    true,
+	}
+
+	s := &Server{
 		cfg:       cfg,
 		logger:    logger,
 		startTime: time.Now(),
-		transportPool: sync.Pool{
-			New: func() interface{} {
-				return &http.Transport{
-					DialContext: (&net.Dialer{
-						Timeout:   time.Duration(cfg.DialTimeout) * time.Second,
-						KeepAlive: 30 * time.Second,
-					}).DialContext,
-					MaxIdleConns:          100,
-					MaxIdleConnsPerHost:   10,
-					IdleConnTimeout:       time.Duration(cfg.IdleTimeout) * time.Second,
-					TLSHandshakeTimeout:   10 * time.Second,
-					ExpectContinueTimeout: 1 * time.Second,
-					DisableCompression:    true,
-				}
-			},
-		},
+		transport: tr,
+		localIPs:  netutil.GetLocalIPs(),
+	}
+
+	go s.refreshIPs()
+	return s
+}
+
+func (s *Server) refreshIPs() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		ips := netutil.GetLocalIPs()
+		s.ipsMutex.Lock()
+		s.localIPs = ips
+		s.ipsMutex.Unlock()
 	}
 }
 
@@ -150,7 +165,9 @@ func (s *Server) isRootHost(host string) bool {
 		h = host
 	}
 
-	for _, ip := range netutil.GetLocalIPs() {
+	s.ipsMutex.RLock()
+	defer s.ipsMutex.RUnlock()
+	for _, ip := range s.localIPs {
 		if h == ip {
 			return true
 		}
@@ -161,9 +178,6 @@ func (s *Server) isRootHost(host string) bool {
 
 func (s *Server) handleHTTP(w *responseWriter, r *http.Request, requestID string, port int) {
 	target, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
-
-	transport := s.transportPool.Get().(*http.Transport)
-	defer s.transportPool.Put(transport)
 
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
@@ -188,7 +202,7 @@ func (s *Server) handleHTTP(w *responseWriter, r *http.Request, requestID string
 				"target", target.String(),
 			)
 		},
-		Transport: transport,
+		Transport: s.transport,
 		ErrorHandler: func(rw http.ResponseWriter, req *http.Request, err error) {
 			s.logger.ProxyError(requestID, port, err)
 			w.err = err
@@ -456,22 +470,38 @@ func (s *Server) GetListeningPorts() []ServiceInfo {
 	}
 
 	var services []ServiceInfo
-	var wg sync.WaitGroup
 	var mu sync.Mutex
-
-	for p, inode := range rawPorts {
+	
+	const maxWorkers = 50
+	jobs := make(chan struct {
+		port  int
+		inode uint64
+	}, len(rawPorts))
+	
+	var wg sync.WaitGroup
+	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
-		go func(port int, in uint64) {
+		go func() {
 			defer wg.Done()
-			info := s.probeService(port)
-			info.ProcessName = procMap[in]
-			mu.Lock()
-			services = append(services, info)
-			mu.Unlock()
-		}(p, inode)
+			for job := range jobs {
+				info := s.probeService(job.port)
+				info.ProcessName = procMap[job.inode]
+				mu.Lock()
+				services = append(services, info)
+				mu.Unlock()
+			}
+		}()
 	}
 
+	for p, inode := range rawPorts {
+		jobs <- struct {
+			port  int
+			inode uint64
+		}{p, inode}
+	}
+	close(jobs)
 	wg.Wait()
+
 	return services
 }
 
@@ -559,7 +589,8 @@ func (s *Server) probeService(port int) ServiceInfo {
 	}
 
 	client := &http.Client{
-		Timeout: 200 * time.Millisecond,
+		Transport: s.transport,
+		Timeout:   250 * time.Millisecond,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -567,7 +598,10 @@ func (s *Server) probeService(port int) ServiceInfo {
 
 	start := time.Now()
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return info
+	}
 	req.Header.Set("User-Agent", "httpsify-discovery/1.0")
 	req.Header.Set("Accept", "text/html,application/json,text/plain")
 

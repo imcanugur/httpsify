@@ -220,9 +220,7 @@ func TestHostPatternRegex(t *testing.T) {
 }
 
 func TestServeLandingPage(t *testing.T) {
-	s := &Server{
-		cfg: config.DefaultConfig(),
-	}
+	s := NewServer(config.DefaultConfig(), nil)
 	req := httptest.NewRequest("GET", "https://localhost/", nil)
 	rr := httptest.NewRecorder()
 
