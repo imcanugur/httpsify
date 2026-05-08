@@ -3,9 +3,9 @@ package version
 import "fmt"
 
 var (
-	version = "1.0.0"
-	commit  = "none"
-	date    = "unknown"
+	version = "1.1.0"
+	commit  = "c2ec61626d964d7aadffeab6cb960e5712635c97"
+	date    = "2026-05-08"
 )
 
 type Info struct {
