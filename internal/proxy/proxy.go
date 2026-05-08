@@ -21,6 +21,7 @@ import (
 
 	"github.com/imcanugur/httpsify/internal/config"
 	"github.com/imcanugur/httpsify/internal/logging"
+	"github.com/imcanugur/httpsify/internal/netutil"
 )
 
 var (
@@ -77,7 +78,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("X-Request-ID", requestID)
 
-	if rootPattern.MatchString(r.Host) {
+	if s.isRootHost(r.Host) {
 		s.serveLandingPage(w, r)
 		return
 	}
@@ -137,6 +138,25 @@ func (s *Server) parseHost(host string) (int, error) {
 	}
 
 	return port, nil
+}
+
+func (s *Server) isRootHost(host string) bool {
+	if rootPattern.MatchString(host) {
+		return true
+	}
+
+	h, _, err := net.SplitHostPort(host)
+	if err != nil {
+		h = host
+	}
+
+	for _, ip := range netutil.GetLocalIPs() {
+		if h == ip {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Server) handleHTTP(w *responseWriter, r *http.Request, requestID string, port int) {
@@ -370,7 +390,7 @@ func (s *Server) getInodeProcessMap() map[uint64]string {
 	return m
 }
 
-func (s *Server) getListeningPorts() []ServiceInfo {
+func (s *Server) GetListeningPorts() []ServiceInfo {
 	rawPorts := make(map[int]uint64)
 	procMap := s.getInodeProcessMap()
 
@@ -492,8 +512,8 @@ func (s *Server) probeService(port int) ServiceInfo {
 		2181:  true, // Zookeeper
 
 		// Application Servers
-		8080:  true, // Java/Tomcat
-		8443:  true, // Java/Tomcat SSL
+		8080:  false, // Java/Tomcat
+		8443:  false, // Java/Tomcat SSL
 		9000:  true, // PHP-FPM
 		9001:  true, // PHP-FPM Alt
 		4369:  true, // Erlang Port Mapper

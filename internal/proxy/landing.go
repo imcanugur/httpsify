@@ -23,7 +23,7 @@ func (s *Server) serveLandingPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.WriteHeader(http.StatusOK)
 
-	services := s.getListeningPorts()
+	services := s.GetListeningPorts()
 	sort.Slice(services, func(i, j int) bool {
 		return services[i].Port < services[j].Port
 	})

@@ -13,12 +13,20 @@ import (
 
 	"github.com/imcanugur/httpsify/internal/config"
 	"github.com/imcanugur/httpsify/internal/logging"
+	"github.com/imcanugur/httpsify/internal/netutil"
 	"github.com/imcanugur/httpsify/internal/proxy"
 	tlsutil "github.com/imcanugur/httpsify/internal/tls"
 	"github.com/imcanugur/httpsify/internal/version"
 )
 
-const boxEmptyLine = "│                                                             │\n"
+const (
+	colorReset  = "\033[0m"
+	colorBold   = "\033[1m"
+	colorCyan   = "\033[36m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorDim    = "\033[2m"
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -38,7 +46,7 @@ func run() error {
 	}
 
 	logger := logging.NewLogger(cfg.Verbose, cfg.AccessLog)
-	logger.ServerStarting(cfg.ListenAddr, cfg.CertPath, cfg.KeyPath, cfg.SelfSigned)
+	// Load or generate certificates
 
 	tlsCfg, err := tlsutil.LoadOrGenerateCert(tlsutil.Config{
 		CertPath:   cfg.CertPath,
@@ -49,13 +57,10 @@ func run() error {
 		return fmt.Errorf("TLS configuration error: %w", err)
 	}
 
-	if cfg.SelfSigned {
-		logger.CertGenerated(cfg.CertPath, cfg.KeyPath)
-	}
+	// Start server
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           proxy.NewServer(cfg, logger),
 		TLSConfig:         tlsCfg,
 		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeout) * time.Second,
 		IdleTimeout:       time.Duration(cfg.IdleTimeout) * time.Second,
@@ -64,8 +69,10 @@ func run() error {
 
 	errChan := make(chan error, 1)
 	go func() {
-		logger.ServerStarted(cfg.ListenAddr)
-		printStartupBox(cfg.ListenAddr)
+		p := proxy.NewServer(cfg, logger)
+		server.Handler = p
+		
+		printStartupBox(cfg.ListenAddr, p.GetListeningPorts())
 		if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 			errChan <- err
 		}
@@ -149,22 +156,70 @@ Environment Variables:
 	}
 }
 
-func printStartupBox(listenAddr string) {
+func printStartupBox(listenAddr string, services []proxy.ServiceInfo) {
+	ips := netutil.GetLocalIPs()
+	
+	var webServices []proxy.ServiceInfo
+	var systemServices []proxy.ServiceInfo
+	for _, svc := range services {
+		if svc.IsWeb {
+			webServices = append(webServices, svc)
+		} else {
+			systemServices = append(systemServices, svc)
+		}
+	}
+	
 	fmt.Fprintf(os.Stderr, "\n")
-	fmt.Fprintf(os.Stderr, "╭─────────────────────────────────────────────────────────────╮\n")
-	fmt.Fprintf(os.Stderr, boxEmptyLine)
-	fmt.Fprintf(os.Stderr, "│   🔒 httpsify is running                                    │\n")
-	fmt.Fprintf(os.Stderr, boxEmptyLine)
-	fmt.Fprintf(os.Stderr, "│   Listening on: %-42s│\n", "https://localhost"+listenAddr)
-	fmt.Fprintf(os.Stderr, boxEmptyLine)
-	fmt.Fprintf(os.Stderr, "│   Usage examples:                                           │\n")
-	fmt.Fprintf(os.Stderr, "│     https://8000.localhost  →  http://127.0.0.1:8000        │\n")
-	fmt.Fprintf(os.Stderr, "│     https://3000.localhost  →  http://127.0.0.1:3000        │\n")
-	fmt.Fprintf(os.Stderr, "│     https://5173.localhost  →  http://127.0.0.1:5173        │\n")
-	fmt.Fprintf(os.Stderr, boxEmptyLine)
-	fmt.Fprintf(os.Stderr, "│   Press Ctrl+C to stop                                      │\n")
-	fmt.Fprintf(os.Stderr, boxEmptyLine)
-	fmt.Fprintf(os.Stderr, "╰─────────────────────────────────────────────────────────────╯\n")
+	fmt.Fprintf(os.Stderr, "  %s%sHTTPSIFY%s %s%s%s\n", colorBold, colorCyan, colorReset, colorDim, version.FullVersion(), colorReset)
+	fmt.Fprintf(os.Stderr, "  %s────────────────────────────────────────────────────────────%s\n", colorDim, colorReset)
+	
+	fmt.Fprintf(os.Stderr, "  %sReady%s    %sServer is up and listening%s\n", colorGreen, colorReset, colorDim, colorReset)
+	fmt.Fprintf(os.Stderr, "  %sLocal%s    %shttps://localhost%s%s\n", colorBold, colorReset, colorCyan, listenAddr, colorReset)
+	
+	for _, ip := range ips {
+		fmt.Fprintf(os.Stderr, "  %sNetwork%s  %shttps://%s%s%s\n", colorBold, colorReset, colorCyan, ip, listenAddr, colorReset)
+	}
+	
+	fmt.Fprintf(os.Stderr, "  %s────────────────────────────────────────────────────────────%s\n\n", colorDim, colorReset)
+	
+	// Web Services
+	if len(webServices) > 0 {
+		fmt.Fprintf(os.Stderr, "  %sProxy Ready Services:%s\n", colorBold, colorReset)
+		for i, svc := range webServices {
+			if i >= 5 {
+				fmt.Fprintf(os.Stderr, "    %s... and %d more web services%s\n", colorDim, len(webServices)-i, colorReset)
+				break
+			}
+			proc := svc.ProcessName
+			if proc == "" { proc = "unknown" }
+			fmt.Fprintf(os.Stderr, "    %shttps://%d.localhost%s  %s→%s  %s\n", colorCyan, svc.Port, colorReset, colorDim, colorReset, proc)
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+	}
+
+	// System Services
+	if len(systemServices) > 0 {
+		fmt.Fprintf(os.Stderr, "  %sOther System Services:%s\n", colorBold, colorReset)
+		for i, svc := range systemServices {
+			if i >= 5 {
+				fmt.Fprintf(os.Stderr, "    %s... and %d more system ports%s\n", colorDim, len(systemServices)-i, colorReset)
+				break
+			}
+			proc := svc.ProcessName
+			if proc == "" { proc = "unknown" }
+			fmt.Fprintf(os.Stderr, "    %sPort %d%s           %s→%s  %s\n", colorYellow, svc.Port, colorReset, colorDim, colorReset, proc)
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+	}
+	
+	if len(services) == 0 {
+		fmt.Fprintf(os.Stderr, "    %sNo active services detected. Dashboard is ready.%s\n\n", colorDim, colorReset)
+	}
+	
+	fmt.Fprintf(os.Stderr, "  %sDashboard Control Center%s\n", colorBold, colorReset)
+	fmt.Fprintf(os.Stderr, "  %sOpen %shttps://localhost%s%s to manage all services and see details.\n", colorDim, colorCyan, colorReset, colorDim)
+	
+	fmt.Fprintf(os.Stderr, "\n  %s%s[Ctrl+C]%s %sto stop the server%s\n", colorBold, colorYellow, colorReset, colorDim, colorReset)
 	fmt.Fprintf(os.Stderr, "\n")
 }
 

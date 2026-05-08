@@ -37,7 +37,7 @@ func NewLogger(verbose, accessLog bool) *Logger {
 		},
 	}
 
-	handler := slog.NewJSONHandler(os.Stdout, opts)
+	handler := slog.NewTextHandler(os.Stdout, opts)
 	logger := slog.New(handler)
 
 	return &Logger{
