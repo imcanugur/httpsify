@@ -80,15 +80,23 @@ HTTPSify is built with production-grade engineering principles:
 
 ## 📦 Installation
 
-**Quick Install (Linux/macOS):**
+HTTPSify is distributed as a single, statically-linked binary. Zero dependencies. One command. Instant HTTPS.
+
+### ⚡ One-Line Installation (Recommended)
+Automatically detect your OS and architecture, download the latest release, and install it to your path:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/imcanugur/httpsify/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/imcanugur/httpsify/main/install.sh | sudo bash
 ```
 
-**Using Go:**
-```bash
-go install github.com/imcanugur/httpsify/cmd/httpsify@latest
-```
+### 📥 Pre-compiled Binaries
+You can also download the binaries manually from the [GitHub Releases](https://github.com/imcanugur/httpsify/releases) page.
+
+| Platform | Architecture | Binary |
+| :--- | :--- | :--- |
+| **Linux** | `amd64` / `arm64` | [Download](https://github.com/imcanugur/httpsify/releases/latest) |
+| **macOS** | `Intel` / `Apple Silicon` | [Download](https://github.com/imcanugur/httpsify/releases/latest) |
+| **Windows** | `amd64` / `arm64` | [Download](https://github.com/imcanugur/httpsify/releases/latest) |
+
 
 ---
 
